@@ -1,0 +1,3 @@
+/home/lllljhhhhh/checheche/create_AUcode/build/CMakeFiles/create_AUcode.dir
+/home/lllljhhhhh/checheche/create_AUcode/build/CMakeFiles/edit_cache.dir
+/home/lllljhhhhh/checheche/create_AUcode/build/CMakeFiles/rebuild_cache.dir
