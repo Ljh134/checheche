@@ -8,6 +8,7 @@
 #include <vector>
 #include <chrono>
 #include <unistd.h>
+#include <cmath>
 
 using namespace std;
 using namespace cv;
@@ -20,7 +21,6 @@ class config
     public:
 
         //1920*1080
-
 
         const cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
             982.45075722923072, 0., 1036.742344369498,  // 第 1 行：f_x, 0, c_x
@@ -37,7 +37,6 @@ class config
 
         // 640*480
 
-
         // const cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
         //     982.45075722923072, 0., 1036.742344369498 * (640.0/1920.0),  // 新c_x = 1036.74 × (640/1920) ≈ 345.58
         //     0., 987.51667190235230, 569.44939162861921 * (480.0/1080.0),  // 新c_y = 569.45 × (480/1080) ≈ 253.09
@@ -46,7 +45,6 @@ class config
         
         
         //800*600
-        
         
         // const cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) <<
         //     982.45075722923072, 0., 1036.742344369498 * (800.0/1920.0),  // 新c_x ≈ 431.97
@@ -59,17 +57,18 @@ class config
         const double reprojection_error = 1.7534637048144051;
         const double square_size_cm = 3.1500000953674316;
 
-        float markerLength = 0.202f; //标记实际边长(cm)
+        float markerLength = 0.202f; //标记实际边长(m)
 
-        double frame = 25;
+        double frame = 25;      // fps
         double time = 1000000/frame;
 
         int view_width = 1920;
         int view_higth = 1080;
-        double spin_react_range = 0.8;
-        double follow_react_range = 0.08;   
-        double search_speed = 1.57;
-        double follow_distance = 40;
+        double spin_react_range = 0.8;      // %
+        double follow_react_range = 0.08;   // %
+        double search_speed = 1.57;        // rad/s
+        double follow_distance = 1;   // m
+        double follow_distance_error_range = 0.1;     // m 
         std::vector<int> target_ids;
         
 
@@ -140,47 +139,36 @@ class Detect
 
     Ptr<aruco::DetectorParameters> detectorParams = cv::aruco::DetectorParameters::create();;
 
-    
-    
-
-    
-
-    
-
     public:
 
     Detect()
     {
-        // // 1. 自适应阈值调整（应对光照不均）
-        // detectorParams->adaptiveThreshWinSizeMin = 5;
-        // detectorParams->adaptiveThreshWinSizeMax = 31;
-        // detectorParams->adaptiveThreshWinSizeStep = 8;
-        // detectorParams->adaptiveThreshConstant = 7.0;
-        // // 2. 尺寸过滤（检测小标志，过滤噪声）
-        // detectorParams->minMarkerPerimeterRate = 0.01;  // 允许更小的标志
-        // detectorParams->maxMarkerPerimeterRate = 10.0;   // 限制过大的候选
-        // detectorParams->minMarkerDistanceRate = 0.02;   // 允许标志密集
-        // // 3. 编码验证（提升容错率，应对边框污染）
-        // detectorParams->maxErroneousBitsInBorderRate = 0.4;  // 边框错误容忍度提升
-        // detectorParams->perspectiveRemoveIgnoredMarginPerCell = 0.15;  // 忽略更多边框干扰
-        // // 4. 角点优化（提升姿态估计精度）
-        // detectorParams->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;  // 亚像素角点
-        // detectorParams->cornerRefinementWinSize = 7;
-
-        //图片检测参数优化设置
-        // 自适应阈值：小窗口+高常数，增强边缘检测
-        detectorParams->adaptiveThreshWinSizeMin = 3;
-        detectorParams->adaptiveThreshWinSizeMax = 15;
+        //一般视频设置:
+        // 1. 自适应阈值调整（应对光照不均）
+        detectorParams->adaptiveThreshWinSizeMin = 5;
+        detectorParams->adaptiveThreshWinSizeMax = 31;
+        detectorParams->adaptiveThreshWinSizeStep = 8;
         detectorParams->adaptiveThreshConstant = 7.0;
-        
-        // 尺寸过滤：匹配生成标记的尺寸占比
-        detectorParams->minMarkerPerimeterRate = 0.1;  // 过滤过小噪声（生成标记大，占比高）
-        detectorParams->maxMarkerPerimeterRate = 2.0;   // 限制过大标记
-        detectorParams->perspectiveRemoveIgnoredMarginPerCell = 0.1; // 减少边缘忽略，适配清晰标记
-        
-        // 保留亚像素优化（生成标记清晰，需高精度角点）
-        detectorParams->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
-        detectorParams->cornerRefinementWinSize = 5;
+        // 2. 尺寸过滤（检测小标志，过滤噪声）
+        detectorParams->minMarkerPerimeterRate = 0.01;  // 允许更小的标志
+        detectorParams->maxMarkerPerimeterRate = 10.0;   // 限制过大的候选
+        detectorParams->minMarkerDistanceRate = 0.02;   // 允许标志密集
+        // 3. 编码验证（提升容错率，应对边框污染）
+        detectorParams->maxErroneousBitsInBorderRate = 0.4;  // 边框错误容忍度提升
+        detectorParams->perspectiveRemoveIgnoredMarginPerCell = 0.15;  // 忽略更多边框干扰
+        // 4. 角点优化（提升姿态估计精度）
+        detectorParams->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;  // 亚像素角点
+        detectorParams->cornerRefinementWinSize = 7;
+
+        // //图片检测参数优化设置
+        // detectorParams->adaptiveThreshWinSizeMin = 3;
+        // detectorParams->adaptiveThreshWinSizeMax = 15;
+        // detectorParams->adaptiveThreshConstant = 5.0; // 降低阈值，增强二值化敏感性
+        // detectorParams->minMarkerPerimeterRate = 0.05; // 降低周长占比阈值，允许更小的标记
+        // detectorParams->maxMarkerPerimeterRate = 3.0;  // 放宽最大周长限制
+        // detectorParams->maxErroneousBitsInBorderRate = 0.5; // 提升边框错误容忍度
+        // detectorParams->perspectiveRemoveIgnoredMarginPerCell = 0.13; // 恢复默认值，适配标准标记
+        // detectorParams->cornerRefinementMethod = cv::aruco::CORNER_REFINE_NONE; // 临时关闭亚像素（减少计算干扰）
 
 
 
@@ -201,31 +189,32 @@ class Detect
                 corners,
                 ids
             );
+
+            //测试输出
+            {
+                cout << "detectMarkers检测到的ID数量:" << ids.size() << endl;
+                if(!ids.empty()) {
+                cout << "检测到的ID列表:";
+                for(int id : ids) cout << id << " ";
+                cout << endl;
+                }
+            }
+
             if(!ids.empty())
             {
+                vector<Point2f> corners_temp;
+                int ids_temp;
                 stright_command = 1 ;
                 for(int i = 0; i< ids.size(); ++i)
                 {
-                    if (ids[i] >= config.target_ids.size() || config.target_ids[ids[i]] == 0) 
-                    {
-                        stright_command = 0;
-                        continue;
-                    }
-    
-                    
-                    if ((target_ids[ids[i]] == 0))
+                    if (ids[i] >= target_ids.size() || target_ids[ids[i]] == 0) 
                     {
                         corners.erase(corners.begin() + i);
                         ids.erase(ids.begin() + i);
                         i--;
+                        continue;
                     }
-                
-                }
 
-                vector<Point2f> corners_temp;
-                int ids_temp;
-                for(int i = 0; i<ids.size(); ++i)
-                {
                     if(target_ids[ids[i]] != 1 && target_ids[ids[i]] != 0)
                     {
                         corners_temp = corners[i];
@@ -238,6 +227,9 @@ class Detect
                         break;
                     }
                 }
+
+                
+                
                 if(show)
                 {
                     aruco::drawDetectedMarkers(
@@ -262,6 +254,7 @@ class Detect
         Mat& draw_img,
         vector<vector<Point2f>>& corners,
         vector<Vec3d>& rvecs,
+        vector<double>& rvecs_angle,
         vector<Vec3d>& tvecs,
         int show =0
     )
@@ -275,6 +268,8 @@ class Detect
             tvecs
         );
 
+        operate.fastRvecToEuler(rvecs,rvecs_angle);
+
         if(show)
         {
             for(int i = 0;i< rvecs.size(); ++i)
@@ -287,12 +282,13 @@ class Detect
                 config.distortion_coeffs,
                 rvecs[i],
                 tvecs[i],
-                0.5*config.markerLength
+                2*config.markerLength
             );
             }
         }
     }
 
+    
 };
 
 
@@ -340,82 +336,65 @@ class Navigate
 
 
     public:
-    double calculate_angle(
-        vector<Vec3d>& tvec,
-        vector<Vec3d>& last
+
+       double calculate_angle_speed(
+        vector<double>& rvecs_angle,
+        vector<double>& last
     )
     {
-        double sum_dw = 0;
-        if(tvec.size() == last.size())
-        {
-            for(int i= 0;i< tvec.size() ; ++i)
-            {
-                sum_dw += (tvec[i][1] - last[i][1]) ;
-            }
-            sum_dw /= tvec.size();
-        }
-
-        else
-        {
-            cout << "marker detecting error : angle_number" <<endl ;
-        }
-
-        return sum_dw / tvec.size();
+        double res = 0;
+        res = (rvecs_angle[2] - last[2]) * config.frame;
+        return res;
     }
-
-    void calculate_pos(
-        vector<Vec3d>& rvec,
-        vector<Vec3d>& last,
+ 
+    void calculate_pos_speed(
+        vector<double>& tvec_center,
+        vector<double>& last_center,
         vector<double>& output
     )
     {
-        double resx,resz;
-        if(rvec.size()==last.size())
-        {
-            // x
-            resx =0;
-            for(int i=0; i< rvec.size();++i)
-            {
-                resx += rvec[i][x] - last[i][x] ;
-            }
-            output[x] = resx / rvec.size();
-
-            // z
-            resz =0;
-            for(int i=0; i< rvec.size();++i)
-            {
-                resz += rvec[i][z] - last[i][z] ;
-            }
-            output[z] = resz / rvec.size();
-        }
-        else
-        {
-            cout << "marker detecting error : pos_number" <<endl ;
-        }
+        output[x] = (tvec_center[0] - last_center[0]) * config.frame;
+        output[z] = (tvec_center[1] - last_center[1]) * config.frame;
     }
 
-    int if_closer(vector<Vec3d>& rvecs)
+    int if_closer(vector<double>& tvecs_center)
     {
         int res = 0;
-        for(int i =0; i< rvecs.size(); ++i)
+        
+        if(tvecs_center[1] == config.follow_distance)
         {
-            if(rvecs[i][3] == config.follow_distance)
-            {
-                res = 0;
-                return res;
-            }
-            if(rvecs[i][3] > config.follow_distance)
-            {
-                res = 1;
-                return res;
-            }
-            if(rvecs[i][3] < config.follow_distance)
-            {
-                res = -1;
-                return res;
-            }
+            res = 0;
+            return res;
         }
+        if(tvecs_center[1] > config.follow_distance)
+        {
+            res = 0.5;
+            return res;
+        }
+        if(tvecs_center[1] < config.follow_distance)
+        {
+            res = -0.5;
+            return res;
+        }
+        
+
         return res;
+    }
+
+    int translation(
+        vector<double> tvecs_center,
+        vector<double> tvecs_center_last,
+        vector<double> output
+    )
+    {
+        if(tvecs_center[0] >0 && tvecs_center_last[0] >0)
+        {
+            output[x] += 0.5;
+        }
+        if(tvecs_center[0] <0 && tvecs_center_last[0] <0)
+        {
+            output[x] -= 0.5;
+        }
     }
 
     void follow_(
@@ -434,44 +413,41 @@ class Navigate
         center.y /= corners.size();
         if(center.x > (1 + config.follow_react_range)*config.view_width/2)
         {
-            output[w] -= 0.5;
+            output[w] += 0.5;
         }
         else if(center.x < (1 - config.follow_react_range)*config.view_width/2)
         {
-            output[w] += 0.5;
+            output[w] -= 0.5;
         }
         
     }
     void speed_cal(
-        vector<Vec3d>& rvecs,
-        vector<Vec3d>& rvecs_last,
+        vector<double>& rvecs_angle,
+        vector<double>& rvecs_last_angle,
         vector<Vec3d>& tvecs,
         vector<Vec3d>& tvecs_last,
         vector<vector<Point2f>>& corners,
         vector<double>& output
-
     )
     {
+        vector<double> tvecs_center(2,0);
+        vector<double> tvecs_center_last(2,0);
         bool right_spin  = true, left_spin = true;
-        calculate_pos(rvecs , rvecs_last,output);
-        for(int i = 0;i< 2;++i)
-        {
-            output[i] *= config.frame;
-        }
 
-
-        int follow = if_closer(rvecs);
-        if(follow == 1)
+        double tvec_x = 0, tvec_z = 0;
+        for(int i = 0; i< tvecs.size(); ++i)
         {
-            output[z] += 1;
+            tvec_x += tvecs[i][x];
+            tvec_z += tvecs[i][z];
         }
-        if(follow == -1)
-        {
-            output[z] -= 1;
-        }
+        tvecs_center[0] = tvec_x/tvecs.size();
+        tvecs_center[1] = tvec_z/tvecs.size();
 
-        output[w] = calculate_angle(tvecs , tvecs_last);
-        output[w] *= config.frame;
+        calculate_pos_speed(tvecs_center , tvecs_center_last, output);
+       
+        output[z] += if_closer(tvecs_center);
+
+        output[w] = calculate_angle_speed(rvecs_angle , rvecs_last_angle);
         if_spin(corners,right_spin,left_spin);
 
         if(!(right_spin) && output[w] > 0)
@@ -485,9 +461,34 @@ class Navigate
             return ;
         }
 
+        translation(tvecs_center,tvecs_center_last);
         follow_(corners,output);
     }
 
+    void dock(vector<Vec3d>& tvecs,vector<Point2f>& corners ,vector<double>& output)
+    {
+        output[w] += follow_(corners,output);
+        
+        vector<double> tvecs_center(2,0);
+        double tvec_x = 0, tvec_z = 0;
+        for(int i = 0; i< tvecs.size(); ++i)
+        {
+            tvec_x += tvecs[i][x];
+            tvec_z += tvecs[i][z];
+        }
+        tvecs_center[0] = tvec_x/tvecs.size();
+        tvecs_center[1] = tvec_z/tvecs.size();
+
+        if(tvecs_center[0] >0 )
+        {
+            output[x] += 0.5;
+        }
+        if(tvecs_center[0] <0 )
+        {
+            output[x] -= 0.5;
+        }
+        
+    }
     
 
     void spin_search(vector<double>& output)
@@ -525,6 +526,46 @@ class Operate
         }
         return 0;
     }
+
+
+     // 将旋转向量转换为欧拉角（弧度/角度）
+    // 旋转顺序：先绕Z轴旋转(偏航角Yaw)，再绕Y轴旋转(俯仰角Pitch)，最后绕X轴旋转(滚转角Roll)
+    // 这是航空和机器人领域最常用的顺序之一。
+    // 快速将单个旋转向量转换为欧拉角 (弧度)
+// 返回值: cv::Vec3d(roll, pitch, yaw)
+    void fastRvecToEuler(const vector<Vec3d>& rvecs , vector<double>& output) 
+    {
+        Mat rotMat;
+        double x = 0, y = 0, z = 0;
+
+        for(int i = 0; i<rvecs.size(); ++i)
+        {
+            Rodrigues(rvecs[i], rotMat);
+            
+            double sy = std::sqrt(rotMat.at<double>(0,0) * rotMat.at<double>(0,0) +
+                                rotMat.at<double>(1,0) * rotMat.at<double>(1,0));
+            bool singular = sy < 1e-6;
+            
+            
+            if (!singular) 
+            {
+                x += std::atan2(rotMat.at<double>(2,1), rotMat.at<double>(2,2));
+                y += std::atan2(-rotMat.at<double>(2,0), sy);
+                z += std::atan2(rotMat.at<double>(1,0), rotMat.at<double>(0,0));
+            } 
+            else 
+            {
+                x += std::atan2(-rotMat.at<double>(1,2), rotMat.at<double>(1,1));
+                y += std::atan2(-rotMat.at<double>(2,0), sy);
+                z += 0;
+            }
+        }
+
+        output[0] = x/rvecs.size();
+        output[1] = y/rvecs.size();
+        output[2] = z/rvecs.size();
+    }
+
     Operate()
     {
         video.open(video_id, cv::CAP_V4L2); // 构造时初始化
@@ -567,13 +608,16 @@ class mode
 
     int photo_detect()
     {
-        Mat img0 = imread("/home/lllljhhhhh/checheche/capture/AUmarker2.png");
+        Mat img0 = imread("/home/lllljhhhhh/checheche/capture/AUmarker2.jpg");
         Mat img1;
         vector<int> ids;
         vector<vector<Point2f>> corners;
         vector<Vec3d> rvecs ;
         vector<Vec3d> tvecs ;
+        vector<double> rvecs_angle(3,0);
         int stright_command = 1;
+        cout << "加载的标记图像尺寸：" << img0.size() << endl;
+
         video_process ->preprocess(img0 , img1, 0);
         if( detect -> detect_AUcode(
             img1,
@@ -590,24 +634,26 @@ class mode
                 img0,
                 corners,
                 rvecs,
+                rvecs_angle,
                 tvecs,
                 SHOW_RESULT
             );
-            cout << "原始检测到的ID列表：";
+            cout << "原始检测到的ID列表: ";
             for(int id : ids) cout << id << " ";
-            cout << endl; // 新增：打印原始检测结果
+            cout << endl;
     
         }
         else
-                {
-                    cout <<"No marker detected" <<endl;
-                }
-                imshow("GREY (press q to quit)",img1);
-                imshow("RESULT (press q to quit)",img0);
-                waitKey(0);
-                destroyAllWindows();
-                return 0;
+        {
+            cout <<"No marker detected" <<endl;
         }
+        imshow("GREY (press q to quit)",img1);
+        imshow("RESULT (press q to quit)",img0);
+        waitKey(0);
+        destroyAllWindows();
+        return 0;
+    }
+
 
     int detect_and_lock()
     {
@@ -623,9 +669,10 @@ class mode
         vector<int> ids; 
         vector<vector<Point2f>> corners;
         vector<Vec3d> rvecs ;
+        vector<double> rvecs_angle(3,0);
         vector<Vec3d> tvecs ;
         
-        int stright_command = 1;
+        int stright_command = 1 ;
 
         while(1)
         {
@@ -639,8 +686,7 @@ class mode
 
             if( ! ( operate.video_capture(img0) ))
             {
-                video_process -> change(img0 , img1);
-                video_process -> preprocess(img1 , img1,GAUSS);
+                video_process -> preprocess(img0 , img1,GAUSS);
 
                if( detect -> detect_AUcode(
                     img1,
@@ -653,15 +699,15 @@ class mode
                     )
                 )
                 {
-
-                detect -> estimate_pose(
-                    img1,
-                    img0,
-                    corners,
-                    rvecs,
-                    tvecs,
-                    SHOW_RESULT
-                );
+                    detect -> estimate_pose(
+                        img1,
+                        img0,
+                        corners,
+                        rvecs,
+                        rvecs_angle,
+                        tvecs,
+                        SHOW_RESULT
+                    );
                 }
                 else
                 {
@@ -693,9 +739,13 @@ class mode
             tm.stop();
             double cost_ms = tm.getTimeMilli();
             double delay_ms = 1000/config.frame - cost_ms; // 目标帧间隔：30帧≈33ms
-            if (delay_ms > 0) {
+            if (delay_ms > 0) 
+            {
                 waitKey(static_cast<int>(delay_ms)); // 用waitKey替代usleep，不阻塞窗口
-            } else {
+            } 
+            else 
+            {
+                cout << "times out at least " << delay_ms << " ms\n" ;
                 waitKey(1); // 至少等待1ms，避免CPU占满
             }
             tm.reset();
@@ -728,8 +778,9 @@ class mode
         vector<int> ids; 
         vector<vector<Point2f>> corners;
         vector<Vec3d> rvecs = {0};
+        vector<double> rvecs_angle(3,0);
+        vector<double> rvecs_angle_last(3,0);
         vector<Vec3d> tvecs = {0};
-        vector<Vec3d> rvecs_last = {0};
         vector<Vec3d> tvecs_last = {0};
         vector<double> speed_output = {0};
         int stright_command = 1;
@@ -745,8 +796,7 @@ class mode
 
             if( ! ( operate.video_capture(img0) ))
             {
-                video_process -> change(img0 , img1);
-                video_process -> preprocess(img1 , img1,GAUSS);
+                video_process -> preprocess(img0 , img1, GAUSS);
 
                 if(detect -> detect_AUcode(
                     img1,
@@ -763,6 +813,7 @@ class mode
                         img0,
                         corners,
                         rvecs,
+                        rvecs_angle,
                         tvecs,
                         NOT_SHOW_RESULT
                     );
@@ -777,8 +828,8 @@ class mode
                     {
 
                         navigate -> speed_cal(
-                                rvecs,
-                                rvecs_last,
+                                rvecs_angle,
+                                rvecs_angle_last,
                                 tvecs,
                                 tvecs_last,
                                 corners,
@@ -788,21 +839,41 @@ class mode
                     }
                     if(stright_command != 1)
                     {
-                        if(rvecs[1][z] >= config.follow_distance)
+                        if(tvecs[0][z] > config.follow_distance + config.follow_distance_error_range)
+                        {
+                           
+                                speed_output[x] = 0;
+                                speed_output[w] = 0;
+                                navigate->dock(tvecs,corners,speed_output);
+                                speed_output[z] = 0.5;
+                        }
+                        if(tvecs[0][z] < config.follow_distance - config.follow_distance_error_range)
+                        {
+                            speed_output[x] = 0;
+                            speed_output[w] = 0;
+                            navigate->dock(tvecs,corners,speed_output);
+                            speed_output[z] = -0.5;
+                        }
+                        if(tvecs[0][z] > config.follow_distance - config.follow_distance_error_range
+                        && tvecs[0][z] < config.follow_distance + config.follow_distance_error_range)
                         {
                             if(stright_command == 2)
                             {
+                                speed_output[x] = 0;
+                                speed_output[z] = 0;
                                 speed_output[w] = 0.5;
                             }
                             if(stright_command == 3)
                             {
+                                speed_output[x] = 0;
+                                speed_output[z] = 0;
                                 speed_output[w] = -0.5;
                             }
                             if(stright_command == 4)
                             {
+                                speed_output[x] = 0;
+                                speed_output[z] = 0;
                                 speed_output[w] = 0;
-                                navigate->follow_(corners,speed_output);
-                                speed_output[z] = 1;
                             }
                         }
 
@@ -816,16 +887,13 @@ class mode
                 }
             
 
-                cout << "x = " << speed_output[x] << " (cm/s)" << endl;
-                cout << "z = " << speed_output[z] << " (cm/s)" << endl;
+                cout << "x = " << speed_output[x] << " (m/s)" << endl;
+                cout << "z = " << speed_output[z] << " (m/s)" << endl;
                 cout << "w = " << speed_output[w] << " (rad/s)" << endl;
                 
-                for(int i = 0;i<rvecs.size();++i)
+                for(int i = 0; i<3; ++i)
                 {
-                    for(int j = 0 ;j <3 ;++j)
-                    {
-                        rvecs_last[i][j] = rvecs[i][j];
-                    }
+                    rvecs_angle_last[i] = rvecs_angle[i];
                 }
                 for(int i = 0;i<rvecs.size();++i)
                 {
@@ -882,16 +950,23 @@ int main()
     cv::setNumThreads(8);
     mode* Mode = new mode();
 
-    // if(Mode -> detect_and_lock())
-    // {
-    //     cout << "detect_and_lock stopped" << endl;
-    // }
-
-    if(Mode ->photo_detect() != 0)
+    ////视频测试:
     {
-        cout << "photo_detect stopped" <<endl;
-        return -1;
+    if(Mode -> detect_and_lock())
+    {
+        cout << "detect_and_lock stopped" << endl;
     }
+    }
+
+
+    //照片测试:
+    //{
+    // if(Mode ->photo_detect() != 0)
+    // {
+    //     cout << "photo_detect stopped" <<endl;
+    //     return -1;
+    // }
+    //}
 
     delete Mode;
     return 0;
