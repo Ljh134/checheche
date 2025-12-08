@@ -1,7 +1,14 @@
-#include <iostream>
-#include <opencv4/opencv2/opencv.hpp>
-#include <cstring>
+#include<iostream>
+#include "opencv4/opencv2/aruco.hpp"
+#include"opencv4/opencv2/opencv.hpp"
+#include "opencv4/opencv2/core/persistence.hpp"
+#include "opencv4/opencv2/core/mat.hpp"
+#include "opencv4/opencv2/calib3d.hpp"
+#include <string>
 #include <vector>
+#include <chrono>
+#include <unistd.h>
+#include <cmath>
 
 using namespace std;
 using namespace cv;
@@ -116,10 +123,22 @@ class Still_Mapping
     vector<Point2f> creating_still_map(Mat& img)
     {
         points.clear();
+        namedWindow("MAP" , WINDOW_NORMAL);
+        imshow("MAP" , img);
         setMouseCallback("MAP" , mouse,(void*)& img);
+        while(waitKey(1) != '\n')
+        {}
+        destroyAllWindows();
         return points;
     }
 
+
+}Still_Mapping;
+
+class operate
+{
+    private:
+    
     void show_process(Mat& img ,Point2f& p)
     {
         int x = p.x;
@@ -141,27 +160,89 @@ class Still_Mapping
         {
             img.at<Vec3b>(y - 1, x) = Vec3b(255, 0, 0);
         }
+        imshow("MAP", img);
     }
 
-}Still_Mapping;
+    public:
+    void run(Point2f p , Point2f last_p ,Mat& img , vector<double>& output)
+    {
+        
+            output[x] = (p.y - last_p.y ) * config.frame;
+            output[z] = (p.x - last_p.x) *  config.frame;
+            show_process(img , p);
+        
+    }
 
-class operate
+    
+} operate;
+
+class mode
 {
     private:
 
-
     public:
-    bool run(vector<Point2f> ps ,Mat& img , vector<double>& output)
-    {
-        Point2f prepoint = ps[0];
-        for(Point2f point:ps)
-        {
-            output[x] = (point.y - prepoint.y ) * config.frame;
-            output[z] = (point.x - prepoint.x) *  config.frame;
-            Still_Mapping.show_process(img , point);
-        }
-    }
+    
 
-    void 
-}
+    int still_mapping_mode()
+    {
+        Mat map(config.window_height, config.window_width, CV_8UC3, Scalar(255,255,255));
+        
+        vector<double> speed_output(3,0);
+        vector<Point2f> points;
+
+        while(1)
+        {
+            points = Still_Mapping.creating_still_map(map);
+
+            Point2f last_point = points[0];
+            
+            
+            for(Point2f point : points)
+            {
+                cv::TickMeter tm;
+                tm.start(); 
+
+                //============================ timer ========================================
+
+                operate.run(point , last_point , map, speed_output);
+                last_point = point;
+
+
+                cout << "x : " << speed_output[x] <<
+                " z : " << speed_output[z] << " w : " << speed_output[w] << endl; 
+                //================================ timer =========================================
+
+
+                tm.stop();
+                double cost_ms = tm.getTimeMilli();
+                double delay_ms = 1000/config.frame - cost_ms; // 目标帧间隔：30帧≈33ms
+                if (delay_ms > 0) 
+                {
+                    waitKey(static_cast<int>(delay_ms)); // 用waitKey替代usleep，不阻塞窗口
+                } 
+                else 
+                {
+                    cout << "times out at least " << delay_ms << " ms\n" ;
+                    waitKey(1); // 至少等待1ms，避免CPU占满
+                }
+                tm.reset();
+            }
+
+            cout<<"process over" << endl;
+            cout <<"press 1 to reset , others to exit\n";
+
+            if(getchar() == '1')
+            {
+                cin.get();
+            }
+            else
+            {
+                cout <<"exit\n";
+                break;
+            }
+        }
+
+        return 0;
+    }
+};
 
