@@ -81,6 +81,83 @@ class config
 } config ;
 
 
+class Operate
+{
+    private:
+    VideoCapture video;
+    int video_id = 4;
+    public:
+    int video_capture(Mat& img)
+    {   
+        if(!video.isOpened())
+        {
+            cout << "video_capture error: could not open video"
+            <<endl;
+            return -1;
+        }
+        video.set(CAP_PROP_FRAME_WIDTH, config.view_width);
+        video.set(CAP_PROP_FRAME_HEIGHT, config.view_higth);
+        video.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M', 'J', 'P', 'G'));
+        video >> img;
+        if(img.empty())
+        {
+            cout << "video_capture error: video is empty "
+             <<endl;
+        }
+        return 0;
+    }
+
+
+     // 将旋转向量转换为欧拉角（弧度/角度）
+    // 旋转顺序：先绕Z轴旋转(偏航角Yaw)，再绕Y轴旋转(俯仰角Pitch)，最后绕X轴旋转(滚转角Roll)
+    // 这是航空和机器人领域最常用的顺序之一。
+    // 快速将单个旋转向量转换为欧拉角 (弧度)
+// 返回值: cv::Vec3d(roll, pitch, yaw)
+    void fastRvecToEuler(const vector<Vec3d>& rvecs , vector<double>& output) 
+    {
+        Mat rotMat;
+        double x = 0, y = 0, z = 0;
+
+        for(int i = 0; i<rvecs.size(); ++i)
+        {
+            Rodrigues(rvecs[i], rotMat);
+            
+            double sy = std::sqrt(rotMat.at<double>(0,0) * rotMat.at<double>(0,0) +
+                                rotMat.at<double>(1,0) * rotMat.at<double>(1,0));
+            bool singular = sy < 1e-6;
+            
+            
+            if (!singular) 
+            {
+                x += std::atan2(rotMat.at<double>(2,1), rotMat.at<double>(2,2));
+                y += std::atan2(-rotMat.at<double>(2,0), sy);
+                z += std::atan2(rotMat.at<double>(1,0), rotMat.at<double>(0,0));
+            } 
+            else 
+            {
+                x += std::atan2(-rotMat.at<double>(1,2), rotMat.at<double>(1,1));
+                y += std::atan2(-rotMat.at<double>(2,0), sy);
+                z += 0;
+            }
+        }
+
+        output[0] = x/rvecs.size();
+        output[1] = y/rvecs.size();
+        output[2] = z/rvecs.size();
+    }
+
+    Operate()
+    {
+        video.open(video_id, cv::CAP_V4L2); // 构造时初始化
+        if(!video.isOpened()) {
+            cerr << "摄像头打开失败！" << endl;
+        }
+    }
+} operate ;
+
+
+
+
 class Video_process
 {
     private:
@@ -381,7 +458,7 @@ class Navigate
         return res;
     }
 
-    int translation(
+    void translation(
         vector<double> tvecs_center,
         vector<double> tvecs_center_last,
         vector<double> output
@@ -461,13 +538,13 @@ class Navigate
             return ;
         }
 
-        translation(tvecs_center,tvecs_center_last);
+        translation(tvecs_center,tvecs_center_last,output);
         follow_(corners,output);
     }
 
-    void dock(vector<Vec3d>& tvecs,vector<Point2f>& corners ,vector<double>& output)
+    void dock(vector<Vec3d>& tvecs,vector<vector<Point2f>>& corners ,vector<double>& output)
     {
-        output[w] += follow_(corners,output);
+        follow_(corners,output);
         
         vector<double> tvecs_center(2,0);
         double tvec_x = 0, tvec_z = 0;
@@ -501,79 +578,7 @@ class Navigate
 
 };
 
-class Operate
-{
-    private:
-    VideoCapture video;
-    int video_id = 4;
-    public:
-    int video_capture(Mat& img)
-    {   
-        if(!video.isOpened())
-        {
-            cout << "video_capture error: could not open video"
-            <<endl;
-            return -1;
-        }
-        video.set(CAP_PROP_FRAME_WIDTH, config.view_width);
-        video.set(CAP_PROP_FRAME_HEIGHT, config.view_higth);
-        video.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M', 'J', 'P', 'G'));
-        video >> img;
-        if(img.empty())
-        {
-            cout << "video_capture error: video is empty "
-             <<endl;
-        }
-        return 0;
-    }
 
-
-     // 将旋转向量转换为欧拉角（弧度/角度）
-    // 旋转顺序：先绕Z轴旋转(偏航角Yaw)，再绕Y轴旋转(俯仰角Pitch)，最后绕X轴旋转(滚转角Roll)
-    // 这是航空和机器人领域最常用的顺序之一。
-    // 快速将单个旋转向量转换为欧拉角 (弧度)
-// 返回值: cv::Vec3d(roll, pitch, yaw)
-    void fastRvecToEuler(const vector<Vec3d>& rvecs , vector<double>& output) 
-    {
-        Mat rotMat;
-        double x = 0, y = 0, z = 0;
-
-        for(int i = 0; i<rvecs.size(); ++i)
-        {
-            Rodrigues(rvecs[i], rotMat);
-            
-            double sy = std::sqrt(rotMat.at<double>(0,0) * rotMat.at<double>(0,0) +
-                                rotMat.at<double>(1,0) * rotMat.at<double>(1,0));
-            bool singular = sy < 1e-6;
-            
-            
-            if (!singular) 
-            {
-                x += std::atan2(rotMat.at<double>(2,1), rotMat.at<double>(2,2));
-                y += std::atan2(-rotMat.at<double>(2,0), sy);
-                z += std::atan2(rotMat.at<double>(1,0), rotMat.at<double>(0,0));
-            } 
-            else 
-            {
-                x += std::atan2(-rotMat.at<double>(1,2), rotMat.at<double>(1,1));
-                y += std::atan2(-rotMat.at<double>(2,0), sy);
-                z += 0;
-            }
-        }
-
-        output[0] = x/rvecs.size();
-        output[1] = y/rvecs.size();
-        output[2] = z/rvecs.size();
-    }
-
-    Operate()
-    {
-        video.open(video_id, cv::CAP_V4L2); // 构造时初始化
-        if(!video.isOpened()) {
-            cerr << "摄像头打开失败！" << endl;
-        }
-    }
-} operate ;
 
 class mode
 {
