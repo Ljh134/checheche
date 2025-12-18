@@ -1,0 +1,3 @@
+/home/lllljhhhhh/checheche/capture/bd/CMakeFiles/lock.dir
+/home/lllljhhhhh/checheche/capture/bd/CMakeFiles/edit_cache.dir
+/home/lllljhhhhh/checheche/capture/bd/CMakeFiles/rebuild_cache.dir
