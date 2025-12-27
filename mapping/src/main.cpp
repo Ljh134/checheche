@@ -14,20 +14,20 @@ using namespace std;
 using namespace cv;
 
 
-enum MouseEventTypes {
-       EVENT_MOUSEMOVE      = 0, //!< 移动鼠标
-       EVENT_LBUTTONDOWN    = 1, //!< 左键按下
-       EVENT_RBUTTONDOWN    = 2, //!< 右键按下
-       EVENT_MBUTTONDOWN    = 3, //!< 中键按下
-       EVENT_LBUTTONUP      = 4, //!< 左键松开
-       EVENT_RBUTTONUP      = 5, //!< 右键松开
-       EVENT_MBUTTONUP      = 6, //!< 中键松开
-       EVENT_LBUTTONDBLCLK  = 7, //!< 左键按下
-       EVENT_RBUTTONDBLCLK  = 8, //!< 左键按下
-       EVENT_MBUTTONDBLCLK  = 9, //!< 左键按下
-       EVENT_MOUSEWHEEL     = 10,//!< 正值表示向前滚，负值后滚
-       EVENT_MOUSEHWHEEL    = 11 //!< 正值左滚，负值右滚
-     };
+// enum MouseEventTypes {
+//        EVENT_MOUSEMOVE      = 0, //!< 移动鼠标
+//        EVENT_LBUTTONDOWN    = 1, //!< 左键按下
+//        EVENT_RBUTTONDOWN    = 2, //!< 右键按下
+//        EVENT_MBUTTONDOWN    = 3, //!< 中键按下
+//        EVENT_LBUTTONUP      = 4, //!< 左键松开
+//        EVENT_RBUTTONUP      = 5, //!< 右键松开
+//        EVENT_MBUTTONUP      = 6, //!< 中键松开
+//        EVENT_LBUTTONDBLCLK  = 7, //!< 左键按下
+//        EVENT_RBUTTONDBLCLK  = 8, //!< 左键按下
+//        EVENT_MBUTTONDBLCLK  = 9, //!< 左键按下
+//        EVENT_MOUSEWHEEL     = 10,//!< 正值表示向前滚，负值后滚
+//        EVENT_MOUSEHWHEEL    = 11 //!< 正值左滚，负值右滚
+//      };
 
 enum direction
 {
@@ -97,9 +97,19 @@ class Mapping
 
     Point2f pointl;
 
-    void mouse(int event, int x, int y, int flags, void*user_data)
+
+    struct MouseCallbackData
     {
-        Mat img = (Mat*)user_data; 
+        Mat* img;
+        Mapping* thisPtr;
+    };
+
+    static void mouse(int event, int x, int y, int flags, void*user_data)
+    {
+        MouseCallbackData* data = (MouseCallbackData*)user_data;
+        Mapping* self = data->thisPtr;
+        Mat& img = *((Mat*)(data->img)); 
+         
         bool leftbottom = false;
         if (event == EVENT_RBUTTONDOWN) //单击右键
         {
@@ -108,7 +118,7 @@ class Mapping
 
         if (event == EVENT_LBUTTONDOWN) //单击左键，输出坐标
         {
-            putText( img, "drawing", Point(0.05*window_height,0.05*window_width),
+            putText( img, "drawing", Point(0.05*config.window_height,0.05*config.window_width),
                          2, 0.1, Scalar(0,0,255));
             leftbottom = true;
         }
@@ -118,7 +128,7 @@ class Mapping
             leftbottom = false;
         }
 
-        if (event == EVENT_MOUSEMOVE & leftbottom) // 鼠标移动（先不判断按键）
+        if (event == EVENT_MOUSEMOVE && leftbottom) // 鼠标移动（先不判断按键）
         {
             if(x <= config.window_width && x>= 0 && y >= 0 && y <= config.window_height)
             {
@@ -145,19 +155,19 @@ class Mapping
                 // 绘制直线
             //通过改变图像像素显示鼠标移动轨迹
             img.at<Vec3b>(y, x) = Vec3b(255, 0, 0);
-            img.at<Vec3b>(y, x - 1) = Vec3b(255, 0, 0);
-            img.at<Vec3b>(y, x + 1) = Vec3b(255, 0, 0);
-            img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
-            img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
+            // img.at<Vec3b>(y, x - 1) = Vec3b(255, 0, 0);
+            // img.at<Vec3b>(y, x + 1) = Vec3b(255, 0, 0);
+            // img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
+            // img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
             //imshow("图像跟随绘制点", img);
             
             
             //通过绘制直线显示鼠标移动轨迹
             Point2f pt(x, y);
-            line(img, prePoint, pt, Scalar(0, 0, 255), 2, 5, 0);
-            pointl = prePoint;
-            prePoint = pt;
-            points.push_back(pt);
+            line(img, self->prePoint, pt, Scalar(0, 0, 255), 2, 5, 0);
+            self->pointl = self->prePoint;
+            self->prePoint = pt;
+            self->points.push_back(pt);
             imshow("MAP", img);
         }
     }
@@ -170,7 +180,9 @@ class Mapping
         points.clear();
         namedWindow("MAP" , WINDOW_NORMAL);
         imshow("MAP" , img);
-        setMouseCallback("MAP" , mouse,(void*)& img);
+
+        MouseCallbackData callbackData = { &img, this};
+        setMouseCallback("MAP" , mouse,(void*)& callbackData);
         while(waitKey(1) != '\n')
         {}
         destroyAllWindows();
