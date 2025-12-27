@@ -46,12 +46,56 @@ class config
 
 
 
-class Still_Mapping
+class operate
+{
+    private:
+    
+    void show_process(Mat& img ,Point2f& p)
+    {
+        int x = p.x;
+        int y = p.y;
+        img.at<Vec3b>(y,x) = Vec3b(0,255,0);
+        if (x - 1 >= 0) 
+        {
+            img.at<Vec3b>(y, x - 1) = Vec3b(255, 0, 0);
+        }
+        if (x + 1 < img.cols) 
+        {
+            img.at<Vec3b>(y, x + 1) = Vec3b(255, 0, 0);
+        }
+        if (y + 1 < img.rows) 
+        {
+            img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
+        }
+        if (y - 1 >= 0) 
+        {
+            img.at<Vec3b>(y - 1, x) = Vec3b(255, 0, 0);
+        }
+        imshow("MAP", img);
+    }
+
+    public:
+    void run(Point2f p , Point2f last_p ,Mat& img , vector<double>& output)
+    {
+        
+            output[x] = (p.y - last_p.y ) * config.frame;
+            output[z] = (p.x - last_p.x) *  config.frame;
+            show_process(img , p);
+        
+    }
+
+    
+} operate;
+
+
+class Mapping
 {
     private:
 
     Point2f prePoint;
     vector<Point2f> points;
+
+    Point2f pointl;
 
     void mouse(int event, int x, int y, int flags, void*user_data)
     {
@@ -111,6 +155,7 @@ class Still_Mapping
             //通过绘制直线显示鼠标移动轨迹
             Point2f pt(x, y);
             line(img, prePoint, pt, Scalar(0, 0, 255), 2, 5, 0);
+            pointl = prePoint;
             prePoint = pt;
             points.push_back(pt);
             imshow("MAP", img);
@@ -132,49 +177,21 @@ class Still_Mapping
         return points;
     }
 
-
-}Still_Mapping;
-
-class operate
-{
-    private:
-    
-    void show_process(Mat& img ,Point2f& p)
+    vector<Point2f> creating_immediate_map(Mat& img)
     {
-        int x = p.x;
-        int y = p.y;
-        img.at<Vec3b>(y,x) = Vec3b(0,255,0);
-        if (x - 1 >= 0) 
-        {
-            img.at<Vec3b>(y, x - 1) = Vec3b(255, 0, 0);
-        }
-        if (x + 1 < img.cols) 
-        {
-            img.at<Vec3b>(y, x + 1) = Vec3b(255, 0, 0);
-        }
-        if (y + 1 < img.rows) 
-        {
-            img.at<Vec3b>(y + 1, x) = Vec3b(255, 0, 0);
-        }
-        if (y - 1 >= 0) 
-        {
-            img.at<Vec3b>(y - 1, x) = Vec3b(255, 0, 0);
-        }
-        imshow("MAP", img);
+        points.clear();
+        setMouseCallback("Map" , mouse, (void*)& img);
+        waitKey(10);
+        vector<Point2f> res(2,0) ={pointl, prePoint};
+        return res;
     }
 
-    public:
-    void run(Point2f p , Point2f last_p ,Mat& img , vector<double>& output)
-    {
-        
-            output[x] = (p.y - last_p.y ) * config.frame;
-            output[z] = (p.x - last_p.x) *  config.frame;
-            show_process(img , p);
-        
-    }
 
-    
-} operate;
+}mapping;
+
+
+
+
 
 class mode
 {
@@ -189,10 +206,11 @@ class mode
         
         vector<double> speed_output(3,0);
         vector<Point2f> points;
+        double cost_ms , delay_ms;
 
         while(1)
         {
-            points = Still_Mapping.creating_still_map(map);
+            points = mapping.creating_still_map(map);
 
             Point2f last_point = points[0];
             
@@ -214,8 +232,8 @@ class mode
 
 
                 tm.stop();
-                double cost_ms = tm.getTimeMilli();
-                double delay_ms = 1000/config.frame - cost_ms; // 目标帧间隔：30帧≈33ms
+                cost_ms = tm.getTimeMilli();
+                delay_ms = 1000/config.frame - cost_ms; // 目标帧间隔：30帧≈33ms
                 if (delay_ms > 0) 
                 {
                     waitKey(static_cast<int>(delay_ms)); // 用waitKey替代usleep，不阻塞窗口
@@ -244,5 +262,86 @@ class mode
 
         return 0;
     }
+
+
+    int immediate_mapping_mode()
+    {
+        Mat map(config.window_height, config.window_width, CV_8UC3, Scalar(0,0,0));
+
+        vector<double> speed_output(3,0);
+        Point2f last_point;
+        bool first_point = true;
+        vector<Point2f> pointoutput(2,0);
+        namedWindow("Map" , WINDOW_NORMAL);
+        double cost_ms,delay_ms;
+
+        while(1)
+        {
+            //timer
+            cv::TickMeter tm;
+                tm.start(); 
+            //  =================== code ================================
+            pointoutput = mapping.creating_immediate_map(map);
+            if(first_point)
+            {
+                first_point = false;
+                continue;
+            }
+            operate.run(pointoutput[1], pointoutput[0], map, speed_output);
+
+            cout << "x = " << speed_output[x] 
+            << " z = " << speed_output[z] << " w = " <<speed_output[w] << endl;
+            // ===================== code ==============================
+            tm.stop();
+            cost_ms = tm.getTimeMilli();
+            delay_ms = 1000/config.frame - cost_ms;
+            if(delay_ms > 0)
+            {
+                waitKey(static_cast<int>(delay_ms));
+            }
+            else
+            {
+                cout << "times out at least " << delay_ms << " ms\n" ;
+                waitKey(1);
+            }
+        }
+    }
 };
+
+
+
+int main()
+{
+    mode m;
+    int mode_select = 0;
+    while(mode_select != 0)
+    {
+        cout << "=================== Mapping Mode ===================\n"
+            << endl
+            << "select mode :\n"
+            << "1. still mapping mode\n"
+            << "2. immediate mapping mode\n"
+            << "0. exit\n\n"
+            << "input : ";
+        
+        cin >> mode_select;
+        switch(mode_select)
+        {
+            case 1:
+                m.still_mapping_mode();
+                break;
+            case 2 :
+                m.immediate_mapping_mode();
+                break;
+            case 0 :
+                cout << "exit\n";
+                break;
+            default:
+                cout << "invalid input , please input again\n";
+                break;
+        }
+    }
+
+    return 0;
+}
 
