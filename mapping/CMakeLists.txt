@@ -1,10 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
-project(lock)
+project(mapping)
 
 set(CMAKE_CXX_STANDARD 17)
 
+
+#设置OpenCV静态库路径
+set(OpenCV_DIR "/opt/opencv-static/lib/cmake/opencv4")
+set(Eigen3_DIR "/usr/share/eigen3/cmake")
+find_package(Eigen3 REQUIRED NO_MODULE)
+
+
 # 查找 OpenCV（需包含 calib3d 模块）
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui calib3d aruco)
+
 
   #set(CMAKE_BUILD_TYPE Debug) 
 
@@ -28,6 +36,7 @@ target_sources(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME}
     PRIVATE
         ./include
+        
 )
 # 链接 OpenCV 库（必须包含 calib3d）
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})

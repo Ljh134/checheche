@@ -36,6 +36,8 @@ enum direction
     w = 2
 };
 
+
+
 class config
 {
     public:
@@ -92,11 +94,17 @@ class Mapping
 {
     private:
 
-    Point2f prePoint;
+    Point2f prePoint = Point2f(0, 0);
     vector<Point2f> points;
 
-    Point2f pointl;
+    Point2f pointl = Point2f(0, 0);
 
+    bool leftbottom = false;
+
+    
+
+
+    public:
 
     struct MouseCallbackData
     {
@@ -110,7 +118,7 @@ class Mapping
         Mapping* self = data->thisPtr;
         Mat& img = *((Mat*)(data->img)); 
          
-        bool leftbottom = false;
+        
         if (event == EVENT_RBUTTONDOWN) //单击右键
         {
             cout << "按住左键开始绘制轨迹";
@@ -120,15 +128,16 @@ class Mapping
         {
             putText( img, "drawing", Point(0.05*config.window_height,0.05*config.window_width),
                          2, 0.1, Scalar(0,0,255));
-            leftbottom = true;
+            self->leftbottom = true;
+            self->prePoint = Point2f(x,y);
         }
 
         if (event == EVENT_LBUTTONUP)
         {
-            leftbottom = false;
+            self->leftbottom = false;
         }
 
-        if (event == EVENT_MOUSEMOVE && leftbottom) // 鼠标移动（先不判断按键）
+        if (event == EVENT_MOUSEMOVE && self->leftbottom) // 鼠标移动（先不判断按键）
         {
             if(x <= config.window_width && x>= 0 && y >= 0 && y <= config.window_height)
             {
@@ -173,7 +182,7 @@ class Mapping
     }
 
 
-    public:
+    
 
     vector<Point2f> creating_still_map(Mat& img)
     {
@@ -183,7 +192,7 @@ class Mapping
 
         MouseCallbackData callbackData = { &img, this};
         setMouseCallback("MAP" , mouse,(void*)& callbackData);
-        while(waitKey(1) != '\n')
+        while(waitKey(1) != 13)
         {}
         destroyAllWindows();
         return points;
@@ -192,9 +201,11 @@ class Mapping
     vector<Point2f> creating_immediate_map(Mat& img)
     {
         points.clear();
-        setMouseCallback("Map" , mouse, (void*)& img);
+        //imshow("Map",img);
+        
         waitKey(10);
-        vector<Point2f> res(2,0) ={pointl, prePoint};
+        vector<Point2f> res = {pointl, prePoint};
+        
         return res;
     }
 
@@ -222,7 +233,15 @@ class mode
 
         while(1)
         {
+            map.setTo(Scalar(255,255,255));
+            
             points = mapping.creating_still_map(map);
+
+            if (points.empty()) 
+            {
+                cout << "未绘制任何轨迹，跳过后续处理" << endl;
+                continue;
+            }
 
             Point2f last_point = points[0];
             
@@ -261,6 +280,8 @@ class mode
             cout<<"process over" << endl;
             cout <<"press 1 to reset , others to exit\n";
 
+
+
             if(getchar() == '1')
             {
                 cin.get();
@@ -283,8 +304,14 @@ class mode
         vector<double> speed_output(3,0);
         Point2f last_point;
         bool first_point = true;
-        vector<Point2f> pointoutput(2,0);
-        namedWindow("Map" , WINDOW_NORMAL);
+        vector<Point2f> pointoutput(2);
+        namedWindow("MAP" , WINDOW_NORMAL);
+        imshow("MAP", map);
+
+        Mapping::MouseCallbackData callbackData = { &map, &mapping };
+        setMouseCallback("MAP" , Mapping::mouse, (void*)& callbackData);
+
+
         double cost_ms,delay_ms;
 
         while(1)
@@ -309,7 +336,12 @@ class mode
             delay_ms = 1000/config.frame - cost_ms;
             if(delay_ms > 0)
             {
-                waitKey(static_cast<int>(delay_ms));
+               int key = waitKey(static_cast<int>(delay_ms));
+               if (key == 27) 
+               {
+                    cout << "退出即时映射模式" << endl;
+                    break; 
+               } 
             }
             else
             {
@@ -317,6 +349,9 @@ class mode
                 waitKey(1);
             }
         }
+
+        destroyAllWindows();
+        return 0;
     }
 };
 
@@ -325,7 +360,7 @@ class mode
 int main()
 {
     mode m;
-    int mode_select = 0;
+    int mode_select = 1;
     while(mode_select != 0)
     {
         cout << "=================== Mapping Mode ===================\n"
@@ -335,8 +370,11 @@ int main()
             << "2. immediate mapping mode\n"
             << "0. exit\n\n"
             << "input : ";
+
+            
         
         cin >> mode_select;
+        cin.get();
         switch(mode_select)
         {
             case 1:

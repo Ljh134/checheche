@@ -1,0 +1,3 @@
+/home/lllljhhhhh/checheche/mapping/build/CMakeFiles/mapping.dir
+/home/lllljhhhhh/checheche/mapping/build/CMakeFiles/edit_cache.dir
+/home/lllljhhhhh/checheche/mapping/build/CMakeFiles/rebuild_cache.dir
