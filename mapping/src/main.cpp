@@ -1,4 +1,8 @@
 #include<iostream>
+#include <fcntl.h>      // File control definitions
+#include <termios.h>    // POSIX terminal control definitions
+#include <unistd.h>     // UNIX standard function definitions
+#include <cstring>
 #include "opencv4/opencv2/aruco.hpp"
 #include"opencv4/opencv2/opencv.hpp"
 #include "opencv4/opencv2/core/persistence.hpp"
@@ -44,6 +48,7 @@ class config
     int frame = 25;
     int window_width = 1920;
     int window_height = 1080;
+    double kp_speed = 0.005;
 }config;
 
 
@@ -79,9 +84,10 @@ class operate
     public:
     void run(Point2f p , Point2f last_p ,Mat& img , vector<double>& output)
     {
-        
-            output[x] = (p.y - last_p.y ) * config.frame;
-            output[z] = (p.x - last_p.x) *  config.frame;
+        //testing
+        //cout << "p :" << p << "last_p " << last_p<<endl;
+            output[x] = (p.y - last_p.y ) * config.frame *config.kp_speed;
+            output[z] = (p.x - last_p.x) *  config.frame *config.kp_speed;
             show_process(img , p);
         
     }
@@ -198,7 +204,7 @@ class Mapping
         return points;
     }
 
-    vector<Point2f> creating_immediate_map(Mat& img)
+    vector<Point2f> creating_immediate_map(Mat& img,bool stop_signal)
     {
         points.clear();
         //imshow("Map",img);
@@ -206,12 +212,125 @@ class Mapping
         waitKey(10);
         vector<Point2f> res = {pointl, prePoint};
         
+        //testing
+        //cout << "pointl : " << pointl << " prePoint : " << prePoint << endl;
+        if(stop_signal)
+        {
+            res[0] = res[1];
+            pointl = prePoint;
+        }
+
+        //testing
+        //cout << "output points : "<< res[0] << " , " << res[1] << endl;
         return res;
     }
 
 
 }mapping;
 
+//=================================================
+//串口通信类
+//==================================================
+class SerialPort {
+private:
+    int serial_fd = -1;
+
+    // 定义发送的数据包结构体 (取消字节对齐，确保紧凑)
+    struct __attribute__((packed)) DataPacket {
+        uint8_t header[2] = {0x55, 0xAA}; // 帧头
+        float x;                          // 横移速度
+        float z;                          // 前后速度
+        float w;                          // 旋转速度
+        uint8_t tail = 0xBB;              // 帧尾
+    };
+
+public:
+    // 初始化串口
+    // port_name: 例如 "/dev/ttyUSB0" 或 "/dev/ttyACM0"
+    // baud_rate: 例如 115200
+    bool init(const char* port_name, int baud_rate = 115200) {
+        // 打开串口
+        serial_fd = open(port_name, O_RDWR | O_NOCTTY | O_NDELAY);
+        if (serial_fd == -1) {
+            std::cerr << "[Serial] Error opening port: " << port_name << std::endl;
+            return false;
+        }
+
+        struct termios tty;
+        if (tcgetattr(serial_fd, &tty) != 0) {
+            std::cerr << "[Serial] Error getting attributes" << std::endl;
+            return false;
+        }
+
+        // 设置波特率
+        speed_t speed;
+        switch(baud_rate) {
+            case 9600: speed = B9600; break;
+            case 115200: speed = B115200; break;
+            default: speed = B115200; break;
+        }
+        cfsetospeed(&tty, speed);
+        cfsetispeed(&tty, speed);
+
+        // 设置 8N1 (8数据位, 无校验, 1停止位)
+        tty.c_cflag &= ~PARENB; // 无校验
+        tty.c_cflag &= ~CSTOPB; // 1停止位
+        tty.c_cflag &= ~CSIZE;
+        tty.c_cflag |= CS8;     // 8数据位
+
+        // 禁用流控制
+        tty.c_cflag &= ~CRTSCTS; 
+        
+        // 启用读取和忽略控制行
+        tty.c_cflag |= CREAD | CLOCAL; 
+
+        // 禁用特殊字符处理 (raw mode)
+        tty.c_lflag &= ~ICANON;
+        tty.c_lflag &= ~ECHO;
+        tty.c_lflag &= ~ECHOE;
+        tty.c_lflag &= ~ISIG;
+        tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+        tty.c_oflag &= ~OPOST; // 原始输出
+
+        // 应用设置
+        if (tcsetattr(serial_fd, TCSANOW, &tty) != 0) {
+            std::cerr << "[Serial] Error setting attributes" << std::endl;
+            return false;
+        }
+
+        std::cout << "[Serial] Port opened successfully: " << port_name << std::endl;
+        return true;
+    }
+
+    // 发送速度指令
+    void send_command(double x, double z, double w) {
+        if (serial_fd == -1) return;
+
+        DataPacket packet;
+        // 将 double 转换为 float 以节省带宽 (下位机通常处理float更快)
+        packet.x = static_cast<float>(x);
+        packet.z = static_cast<float>(z);
+        packet.w = static_cast<float>(w);
+
+        // 写入串口
+        int bytes_written = write(serial_fd, &packet, sizeof(packet));
+        
+        // 可选：调试打印
+        // std::cout << "Sent " << bytes_written << " bytes." << std::endl;
+    }
+
+    // 关闭串口
+    void close_port() {
+        if (serial_fd != -1) {
+            close(serial_fd);
+            serial_fd = -1;
+        }
+    }
+
+    ~SerialPort() {
+        close_port();
+    }
+};
 
 
 
@@ -219,11 +338,16 @@ class Mapping
 class mode
 {
     private:
+    std::unique_ptr<SerialPort> serial;
 
     public:
-    
+    mode()
+    {
+        serial = std::make_unique<SerialPort>();
+        serial->init("/dev/ttyUSB0", 115200);
+    }
 
-    int still_mapping_mode()
+    int still_mapping_mode(bool debug = true)
     {
         Mat map(config.window_height, config.window_width, CV_8UC3, Scalar(255,255,255));
         
@@ -256,9 +380,13 @@ class mode
                 operate.run(point , last_point , map, speed_output);
                 last_point = point;
 
-
+                if(debug)
                 cout << "x : " << speed_output[x] <<
                 " z : " << speed_output[z] << " w : " << speed_output[w] << endl; 
+
+                else
+                    serial->send_command(speed_output[x], speed_output[z], speed_output[w]);
+                
                 //================================ timer =========================================
 
 
@@ -297,7 +425,7 @@ class mode
     }
 
 
-    int immediate_mapping_mode()
+    int immediate_mapping_mode(bool debug = true)
     {
         Mat map(config.window_height, config.window_width, CV_8UC3, Scalar(0,0,0));
 
@@ -313,23 +441,43 @@ class mode
 
 
         double cost_ms,delay_ms;
-
+        bool stop_signal = true;
+        cout << "按住左键绘制轨迹，松开停止绘制\n"
+             << "按 b 键切换停止/继续运动\n"
+             << "按 ESC 键退出即时映射模式\n";
+        cout << "初始为停止状态，按 b 键开始运动\n";
         while(1)
         {
             //timer
             cv::TickMeter tm;
                 tm.start(); 
             //  =================== code ================================
-            pointoutput = mapping.creating_immediate_map(map);
+            pointoutput = mapping.creating_immediate_map(map,stop_signal);
             if(first_point)
             {
                 first_point = false;
                 continue;
             }
+            if(stop_signal)
+            {
+                pointoutput[0] = pointoutput[1];
+            }
             operate.run(pointoutput[1], pointoutput[0], map, speed_output);
 
+           if(stop_signal)
+           {
+                speed_output[x] = 0;
+                speed_output[z] = 0;
+           }
+
+
+            if(debug)
             cout << "x = " << speed_output[x] 
             << " z = " << speed_output[z] << " w = " <<speed_output[w] << endl;
+
+            else
+                serial->send_command(speed_output[x], speed_output[z], speed_output[w]);
+                
             // ===================== code ==============================
             tm.stop();
             cost_ms = tm.getTimeMilli();
@@ -337,6 +485,17 @@ class mode
             if(delay_ms > 0)
             {
                int key = waitKey(static_cast<int>(delay_ms));
+               if((key == 'b'  && !stop_signal))
+               {
+                    stop_signal = true;
+                    cout << "收到停止信号，停止运动" << endl;
+               }
+               else if(key == 'b' && stop_signal)
+               {
+                    stop_signal = false;
+                    cout << "收到继续信号，继续运动" << endl;
+               }
+               
                if (key == 27) 
                {
                     cout << "退出即时映射模式" << endl;
@@ -395,3 +554,27 @@ int main()
     return 0;
 }
 
+
+
+
+/*
+下位机接收：
+        // 定义和上位机完全一样的结构体
+        typedef struct {
+            uint8_t header[2];
+            float x;
+            float z;
+            float w;
+            uint8_t tail;
+        } __attribute__((packed)) Packet;
+
+        void on_uart_receive(uint8_t* buffer, int len) {
+            Packet* pkt = (Packet*)buffer;
+
+            // 校验帧头和帧尾
+            if (pkt->header[0] == 0x55 && pkt->header[1] == 0xAA && pkt->tail == 0xBB) {
+                // 接收成功，直接使用浮点数
+                control_robot(pkt->x, pkt->z, pkt->w);
+            }
+        }
+*/
