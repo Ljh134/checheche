@@ -14,7 +14,7 @@ using namespace std;
 using namespace cv;
 using namespace std::chrono;
 
-
+#define IPAD_SIZE 0.106f //m
 
 class config
 {
@@ -57,9 +57,9 @@ class config
         const double reprojection_error = 1.7534637048144051;
         const double square_size_cm = 3.1500000953674316;
 
-        float markerLength = 0.202f; //标记实际边长(m)
+        float markerLength = IPAD_SIZE; //标记实际边长(m)
 
-        double frame = 25;      // fps
+        double frame = 4;      // fps
         double time = 1000000/frame;
 
         int view_width = 1920;
@@ -420,7 +420,7 @@ class Navigate
     )
     {
         double res = 0;
-        res = (rvecs_angle[2] - last[2]) * config.frame;
+        res = (rvecs_angle[1] - last[1]) * config.frame;
         return res;
     }
  
@@ -434,29 +434,15 @@ class Navigate
         output[z] = (tvec_center[1] - last_center[1]) * config.frame;
     }
 
-    int if_closer(vector<double>& tvecs_center)
+    int if_closer(vector<double>& tvecs_center) 
     {
-        int res = 0;
-        
-        if(tvecs_center[1] == config.follow_distance)
+    // 此时 tvecs_center[1] 已经是真正的 Z 轴深度了
+        if(abs(tvecs_center[1] - config.follow_distance) < config.follow_distance_error_range) 
         {
-            res = 0;
-            return res;
+            return 0; 
         }
-        if(tvecs_center[1] > config.follow_distance)
-        {
-            res = 0.5;
-            return res;
-        }
-        if(tvecs_center[1] < config.follow_distance)
-        {
-            res = -0.5;
-            return res;
-        }
-        
-
-        return res;
-    }
+    return (tvecs_center[1] > config.follow_distance) ? 0.5 : -0.5;
+}
 
     void translation(
         vector<double> tvecs_center,
@@ -515,7 +501,7 @@ class Navigate
         for(int i = 0; i< tvecs.size(); ++i)
         {
             tvec_x += tvecs[i][x];
-            tvec_z += tvecs[i][z];
+            tvec_z += tvecs[i][2]; //z替换的为1,但此处应该为2
         }
         tvecs_center[0] = tvec_x/tvecs.size();
         tvecs_center[1] = tvec_z/tvecs.size();
@@ -691,6 +677,8 @@ class mode
 
             if( ! ( operate.video_capture(img0) ))
             {
+                //testing
+                //cout << "实际图像分辨率: " << img0.cols << " x " << img0.rows << endl;
                 video_process -> preprocess(img0 , img1,GAUSS);
 
                if( detect -> detect_AUcode(
@@ -713,6 +701,8 @@ class mode
                         tvecs,
                         SHOW_RESULT
                     );
+
+                    cout << "marker pos: x = " << tvecs[0][x] << "(m) , z = " << tvecs[0][z] << "(m)" << endl;
                 }
                 else
                 {
@@ -768,7 +758,7 @@ class mode
         return 0;
     }
 
-    int detect_and_navigate(int if_visual = 0 )
+    int detect_and_navigate(int if_visual = 1 )
     {
         namedWindow("GREY (press q to quit)" , WINDOW_NORMAL);
         resizeWindow("GREY (press q to quit)",
@@ -778,7 +768,7 @@ class mode
         resizeWindow("RESULT (press q to quit)",
             config.view_width,config.view_higth);
 
-
+        std::cout << "begin running" <<std::endl;
         Mat img0 ,img1 ;
         vector<int> ids; 
         vector<vector<Point2f>> corners;
@@ -823,10 +813,15 @@ class mode
                         NOT_SHOW_RESULT
                     );
 
+                    //testing
+                    //std::cout << "detect over" << std::endl;
                     if(if_visual)
                     {
                         imshow("GREY (press q to quit)",img1);
                         imshow("RESULT (press q to quit)",img0);
+
+                        //testing
+                        //std::cout << "visual on" << std::endl;
                     }
                     
                     if(stright_command == 1)
@@ -933,6 +928,7 @@ class mode
             }
 
         }
+        return 0;
     }
 
 
@@ -959,10 +955,16 @@ int main()
     {
     if(Mode -> detect_and_lock())
     {
-        cout << "detect_and_lock stopped" << endl;
+        cout << "detect_and_lock arrupted" << endl;
     }
+    else cout << "detect_and_lock ended normally" << endl;
     }
 
+    // if(Mode -> detect_and_navigate(1))
+    // {
+    //     cout << "detect_and_navigate arrupted" << endl;
+    // }
+    // else cout << "detect_and_navigate ended normally" << endl;
 
     //照片测试:
     //{
