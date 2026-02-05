@@ -374,16 +374,22 @@ class Navigate
     private:
     double spin_react_range = 0.8;   
     double search_speed = 1.57;    // rad/s
-    
 
-    enum speed
+    // 定义输出指令的索引（这是你给底盘发送速度的通道）
+    enum CommandIndex
     {
-        x =0,
-        z =1,
-        w =2
+        CMD_X = 0, // 左右横移速度
+        CMD_Z = 1, // 前后移动速度
+        CMD_W = 2  // 旋转角速度
     };
-
-
+    
+    // 定义OpenCV坐标系的索引（这是读取相机数据的标准）
+    enum CVIndex
+    {
+        CV_X = 0, // 水平位移
+        CV_Y = 1, // 垂直位移
+        CV_Z = 2  // 深度距离（重点！）
+    };
 
     void if_spin(vector<vector<Point2f>>& corners ,
                 bool& right_spin,
@@ -410,39 +416,51 @@ class Navigate
         }
     }
 
-
-
     public:
 
-       double calculate_angle_speed(
+    double calculate_angle_speed(
         vector<double>& rvecs_angle,
         vector<double>& last
     )
     {
         double res = 0;
+        // 修正：使用 index 1 (Yaw/Y轴旋转) 而不是 2 (Roll/Z轴旋转)
+        // 假设 Y 轴旋转对应左右偏航
         res = (rvecs_angle[1] - last[1]) * config.frame;
         return res;
     }
  
     void calculate_pos_speed(
-        vector<double>& tvec_center,
+        vector<double>& tvec_center, // 这里传入的是物理坐标
         vector<double>& last_center,
         vector<double>& output
     )
     {
-        output[x] = (tvec_center[0] - last_center[0]) * config.frame;
-        output[z] = (tvec_center[1] - last_center[1]) * config.frame;
+        // 计算速度变化
+        output[CMD_X] = (tvec_center[CV_X] - last_center[CV_X]) * config.frame;
+        
+        // 修正：前后速度应该基于深度(CV_Z)的变化，而不是高度(CV_Y)
+        output[CMD_Z] = (tvec_center[CV_Z] - last_center[CV_Z]) * config.frame;
     }
 
-    int if_closer(vector<double>& tvecs_center) 
+    // 修正：输入应该是深度值 z_distance
+    int if_closer(double z_distance)
     {
-    // 此时 tvecs_center[1] 已经是真正的 Z 轴深度了
-        if(abs(tvecs_center[1] - config.follow_distance) < config.follow_distance_error_range) 
+        // 距离判断：如果当前深度 > 期望距离，则需要前进(0.5)，反之后退
+        if( abs(z_distance - config.follow_distance) < config.follow_distance_error_range )
         {
-            return 0; 
+            return 0;
         }
-    return (tvecs_center[1] > config.follow_distance) ? 0.5 : -0.5;
-}
+        if(z_distance > config.follow_distance)
+        {
+            return 0.5; // 太远了，向前
+        }
+        if(z_distance < config.follow_distance)
+        {
+            return -0.5; // 太近了，向后
+        }
+        return 0;
+    }
 
     void translation(
         vector<double> tvecs_center,
@@ -450,13 +468,14 @@ class Navigate
         vector<double> output
     )
     {
-        if(tvecs_center[0] >0 && tvecs_center_last[0] >0)
+        // 简单的 P 控制：如果目标在右边(X>0)，向右移
+        if(tvecs_center[CV_X] > 0 )
         {
-            output[x] += 0.5;
+            output[CMD_X] += 0.5;
         }
-        if(tvecs_center[0] <0 && tvecs_center_last[0] <0)
+        if(tvecs_center[CV_X] < 0 )
         {
-            output[x] -= 0.5;
+            output[CMD_X] -= 0.5;
         }
     }
 
@@ -465,25 +484,33 @@ class Navigate
         vector<double>& output
     )
     {
-        Point2f center;
+        Point2f center(0,0);
+        int total_points = 0;
         for(int i = 0 ; i< corners.size(); ++i)
         {
-            center.x += (corners[i][0].x + corners[i][1].x + corners[i][2].x + corners[i][3].x) /4;
-            center.y += (corners[i][0].y + corners[i][1].y + corners[i][2].y + corners[i][3].y) /4;
+            for(int j=0; j<4; ++j) {
+                center.x += corners[i][j].x;
+                center.y += corners[i][j].y;
+            }
+            total_points += 4;
         }
 
-        center.x /= corners.size();
-        center.y /= corners.size();
+        if(total_points > 0) {
+            center.x /= total_points;
+            center.y /= total_points;
+        }
+
         if(center.x > (1 + config.follow_react_range)*config.view_width/2)
         {
-            output[w] += 0.5;
+            // 目标在画面右侧，需要顺时针转/向右转
+            output[CMD_W] -= 0.5; // 注意：这里正负号取决于你的电机转向定义，通常左转为正
         }
         else if(center.x < (1 - config.follow_react_range)*config.view_width/2)
         {
-            output[w] -= 0.5;
+            output[CMD_W] += 0.5;
         }
-        
     }
+
     void speed_cal(
         vector<double>& rvecs_angle,
         vector<double>& rvecs_last_angle,
@@ -493,77 +520,84 @@ class Navigate
         vector<double>& output
     )
     {
-        vector<double> tvecs_center(2,0);
-        vector<double> tvecs_center_last(2,0);
-        bool right_spin  = true, left_spin = true;
+        // 临时变量存储当前的物理中心坐标（OpenCV坐标系）
+        vector<double> tvecs_center(3, 0); 
+        vector<double> tvecs_center_last(3, 0);
+        
+        bool right_spin = true, left_spin = true;
 
-        double tvec_x = 0, tvec_z = 0;
+        // 1. 计算当前的中心坐标
+        double sum_x = 0, sum_y = 0, sum_z = 0;
         for(int i = 0; i< tvecs.size(); ++i)
         {
-            tvec_x += tvecs[i][x];
-            tvec_z += tvecs[i][2]; //z替换的为1,但此处应该为2
+            sum_x += tvecs[i][0]; // CV_X
+            sum_y += tvecs[i][1]; // CV_Y (高度)
+            sum_z += tvecs[i][2]; // CV_Z (深度) !!! 修正关键点
         }
-        tvecs_center[0] = tvec_x/tvecs.size();
-        tvecs_center[1] = tvec_z/tvecs.size();
+        tvecs_center[0] = sum_x / tvecs.size();
+        tvecs_center[1] = sum_y / tvecs.size();
+        tvecs_center[2] = sum_z / tvecs.size();
 
+        // 2. 计算上一帧的中心坐标 (简单处理，假设 tvecs_last 结构相同)
+        // 注意：这里由于 tvecs_last 是 Vec3d，可以直接取
+        if(tvecs_last.size() > 0) {
+            tvecs_center_last[0] = tvecs_last[0][0]; 
+            tvecs_center_last[1] = tvecs_last[0][1];
+            tvecs_center_last[2] = tvecs_last[0][2];
+        }
+
+        // 3. 计算位移速度
         calculate_pos_speed(tvecs_center , tvecs_center_last, output);
        
-        output[z] += if_closer(tvecs_center);
+        // 4. 深度保持逻辑 (Follow distance)
+        // 修正：传入 tvecs_center[2] 即深度 Z
+        output[CMD_Z] += if_closer(tvecs_center[2]); 
 
-        output[w] = calculate_angle_speed(rvecs_angle , rvecs_last_angle);
-        if_spin(corners,right_spin,left_spin);
+        // 5. 角速度计算
+        output[CMD_W] = calculate_angle_speed(rvecs_angle , rvecs_last_angle);
+        
+        // 6. 旋转限制逻辑
+        if_spin(corners, right_spin, left_spin);
 
-        if(!(right_spin) && output[w] > 0)
+        if(!(right_spin) && output[CMD_W] > 0) // 假设 >0 是向左转
         {
-            output[w] = 0;
-            return ;
+            output[CMD_W] = 0;
         }
-        if(!(left_spin) && output[w] < 0)
+        if(!(left_spin) && output[CMD_W] < 0)
         {
-            output[w] = 0;
-            return ;
+            output[CMD_W] = 0;
         }
 
-        translation(tvecs_center,tvecs_center_last,output);
-        follow_(corners,output);
+        // 7. 横移对齐
+        translation(tvecs_center, tvecs_center_last, output);
+        
+        // 8. 像素级辅助对齐 (可能会与 calculate_angle_speed 冲突，建议调试时先开启其中一个)
+        follow_(corners, output);
     }
 
-    void dock(vector<Vec3d>& tvecs,vector<vector<Point2f>>& corners ,vector<double>& output)
+    void dock(vector<Vec3d>& tvecs, vector<vector<Point2f>>& corners, vector<double>& output)
     {
-        follow_(corners,output);
+        follow_(corners, output);
         
-        vector<double> tvecs_center(2,0);
-        double tvec_x = 0, tvec_z = 0;
+        double tvec_x = 0;
         for(int i = 0; i< tvecs.size(); ++i)
         {
-            tvec_x += tvecs[i][x];
-            tvec_z += tvecs[i][z];
+            tvec_x += tvecs[i][0]; // CV_X
         }
-        tvecs_center[0] = tvec_x/tvecs.size();
-        tvecs_center[1] = tvec_z/tvecs.size();
+        double center_x = tvec_x / tvecs.size();
 
-        if(tvecs_center[0] >0 )
-        {
-            output[x] += 0.5;
-        }
-        if(tvecs_center[0] <0 )
-        {
-            output[x] -= 0.5;
-        }
-        
+        if(center_x > 0 ) output[CMD_X] += 0.5;
+        if(center_x < 0 ) output[CMD_X] -= 0.5;
     }
     
 
     void spin_search(vector<double>& output)
     {
-        output[x] = 0;
-        output[z] = 0;
-        output[w] = search_speed;
+        output[CMD_X] = 0;
+        output[CMD_Z] = 0;
+        output[CMD_W] = search_speed;
     }
-
-
 };
-
 
 
 class mode
